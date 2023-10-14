@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/annyang/2.6.1/annyang.min.js"></script>
+    <title>음성 인식</title>
+</head>
+
+<body>
+    <button id="startRecognition">음성 인식 시작</button>
+    <button id="sendResults">결과 전송</button>
+    <div id='result'>결과가 없습니다.</div>
+    <div id='finalResults'>최종 결과 프롬프트:</div>
+    <div id='translatedResults'>최종 프롬프트(번역):</div>
+    <div id='serverResponse'></div>
+
+    <script>
+        if (annyang) {
+            annyang.setLanguage('ko');
+            annyang.start({ autoRestart: false, continuous: true });
+
+            var recognition = annyang.getSpeechRecognizer();
+            var final_transcripts = [];
+
+            recognition.interimResults = true;
+
+            recognition.onresult = function (event) {
+                var interim_transcript = '';
+                var final_transcript = '';
+                
+                for (var i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        final_transcript += event.results[i][0].transcript;
+                    } else {
+                        interim_transcript += event.results[i][0].transcript;
+                    }
+                }
+                
+                document.getElementById('result').innerHTML = '중간값: ' + interim_transcript + '<br/>결과값: ' + final_transcript;
+
+                if (final_transcript) {
+                    final_transcripts.push(final_transcript);
+                    document.getElementById('finalResults').innerHTML = '최종 결과 프롬프트: ' + final_transcripts.join(' ');
+                }
+            };
+
+            const startButton = document.getElementById('startRecognition');
+            startButton.addEventListener('click', () => {
+                if (annyang.isListening()) {
+                    annyang.pause();
+                    startButton.innerText = '음성 인식 시작';
+                } else {
+                    annyang.resume();
+                    startButton.innerText = '음성 인식 일시 중지';
+                }
+            });
+
+            document.getElementById('sendResults').addEventListener('click', () => {
+                translateText(final_transcripts.join(' ')); 
+            });
+        } else {
+            alert('Sorry, your browser does not support speech recognition.');
+        }
+
+        function translateText(text) {
+            var clientId = 'fIfMjFH9VJ1GjQPim7j5';
+            var clientSecret = 'SH5iWQfw7q';
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/translate', true);  // 자체 서버의 엔드포인트로 변경
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.setRequestHeader('X-Naver-Client-Id', clientId);
+            xhr.setRequestHeader('X-Naver-Client-Secret', clientSecret);
+
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState == 4 && xhr.status == 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    var translatedText = response.message.result.translatedText;
+
+                    // 번역된 텍스트를 화면에 표시
+                    document.getElementById('result').innerHTML = '번역된 텍스트: ' + translatedText;
+                    document.getElementById('translatedResults').innerText = '최종 프롬프트(번역): ' + translatedText;
+
+                    // 번역된 텍스트를 서버에 전송
+                    sendResultsToServer(final_transcripts.join(' '), translatedText);
+                }
+            };
+
+            var body = 'source=ko&target=en&text=' + encodeURI(text);
+            xhr.send(body);
+        }
+
+        function sendResultsToServer(originalText, translatedText) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "http://localhost:5000/save-results", true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState == 4 && xhr.status == 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    if (response.status === "success" && response.original_text === originalText && response.translated_text === translatedText) {
+                        document.getElementById('serverResponse').innerText = "전송 성공";
+                    } else {
+                        document.getElementById('serverResponse').innerText = "전송 실패";
+                    }
+                }
+            };
+
+            var data = {
+                originalText: originalText,
+                translatedText: translatedText
+            };
+
+            xhr.send(JSON.stringify(data));
+        }
+    </script>
+</body>
+
+</html>
